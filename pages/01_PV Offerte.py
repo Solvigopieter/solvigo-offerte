@@ -38,11 +38,11 @@ with col1:
     verloopdatum = st.date_input("Verloopdatum", date.today() + timedelta(days=60))
 with col2:
     aantal_panelen = st.number_input("Aantal panelen", min_value=1, value=1)
-    afstand_km = st.number_input("Afstand (km, enkele rit)", min_value=0, value=1)
+    afstand_km = st.number_input("Afstand (km)", min_value=0, value=1)
     paneel_oppervlakte = st.number_input("Oppervlakte per paneel (m²)", min_value=0.1, value=2.0, step=0.1)
     aantal_robots = st.number_input("Aantal robots", min_value=1, value=1)
-    zware_vervuiling = st.checkbox("Zware vervuiling (3× overgaan)", value=False)
-    coating = st.checkbox("Optionele coating", value=True)
+    zware_vervuiling = st.checkbox("Zware vervuiling", value=False)
+    coating = st.checkbox("Optionele coating", value=True)  # => bepaalt of coating getoond wordt in PDF en tabel
     btw_tarief_pct = st.selectbox("BTW tarief", [0, 6, 21], index=0, format_func=lambda v: f"{v}%")
 
 # =========================
@@ -61,7 +61,7 @@ with col4:
     u_per_dag = st.number_input("Uren per dag", value=8.0)
     robot_water_l_per_uur = st.number_input("Robot: waterverbruik per uur (L)", value=600)
     coating_prijs_per_5L = st.number_input("Coating: prijs per 5L (EUR)", value=350.0)
-    coating_hoeveelheid_per_1000L = st.number_input("Coatinghoeveelheid per 1000 m² (L)", value=1.0)
+    coating_l_per_1000m2 = st.number_input("Coatinghoeveelheid (L per 1000 m²)", value=1.0)
 with col5:
     borstel_life_panelen = st.number_input("Borstel: levensduur (panelen)", value=60000)
     borstel_prijs = st.number_input("Borstel: prijs (EUR)", value=200.0)
@@ -99,7 +99,7 @@ korstmos_aanwezig = st.checkbox("Korstmos aanwezig?", value=False)
 aantal_korstmos_panelen = 0
 gradatie_korstmos = "Licht"
 if korstmos_aanwezig:
-    aantal_korstmos_panelen = st.number_input("Aantal panelen met korstmos", min_value=1, value= min(50, int(aantal_panelen)), max_value=int(aantal_panelen))
+    aantal_korstmos_panelen = st.number_input("Aantal panelen met korstmos", min_value=1, value=min(50, int(aantal_panelen)), max_value=int(aantal_panelen))
     gradatie_korstmos = st.selectbox("Gradatie korstmos", ["Licht", "Gemiddeld", "Zwaar"], index=1)
 
 PRODUCT_KG_PER_150M2 = 5.0
@@ -109,12 +109,7 @@ PRODUCT_KG_PER_M2 = PRODUCT_KG_PER_150M2 / 150.0
 korstmos_product_kost = 0.0
 korstmos_product_kg = 0
 if korstmos_aanwezig:
-    if gradatie_korstmos == "Licht":
-        product_factor = 1.0
-    elif gradatie_korstmos == "Gemiddeld":
-        product_factor = 1.5
-    else:
-        product_factor = 2.0
+    product_factor = 1.0 if gradatie_korstmos == "Licht" else (1.5 if gradatie_korstmos == "Gemiddeld" else 2.0)
     totale_opp = aantal_korstmos_panelen * paneel_oppervlakte
     korstmos_product_kg = math.ceil(PRODUCT_KG_PER_M2 * totale_opp * product_factor)
     korstmos_product_kost = korstmos_product_kg * PRODUCT_PRIJS_PER_KG
@@ -145,7 +140,7 @@ def bereken_kosten_robot(
     hoogtewerker_gebruiken=False,
     hoogtewerker_dagtarief=0.0
 ):
-    # Zware vervuiling => 3× overgaan op alle panelen
+    # Zware vervuiling => 3× overgaan (doorrekenen in tijd/water/slijtage)
     f = 3.0 if opties.get('zware_vervuiling', False) else 1.0
     aantal_robots = opties.get('aantal_robots', 1)
 
@@ -155,7 +150,7 @@ def bereken_kosten_robot(
     # Capaciteit
     robot_panelen_per_uur = params['robot_panelen_per_dag'] / max(params['u_per_dag'], 0.0001)
 
-    # Uren gewone panelen (factor f voor 3× overgaan)
+    # Uren gewone panelen
     uren_cleaning_gewone = 0.0
     if gewone_panelen > 0:
         uren_cleaning_gewone = (gewone_panelen / (robot_panelen_per_uur * aantal_robots)) * f
@@ -164,13 +159,11 @@ def bereken_kosten_robot(
     uren_cleaning_korstmos = 0.0
     if korstmos_aanwezig and aantal_korstmos_panelen > 0:
         if gradatie_korstmos == "Licht":
-            # 2× baseline duur
             uren_cleaning_korstmos = (aantal_korstmos_panelen / (robot_panelen_per_uur * aantal_robots)) * 2.0 * f
         elif gradatie_korstmos == "Gemiddeld":
-            # 3× baseline duur
             uren_cleaning_korstmos = (aantal_korstmos_panelen / (robot_panelen_per_uur * aantal_robots)) * 3.0 * f
         else:
-            # Zwaar: vast 4 min/paneel => 4/60 uur per paneel, vermenigvuldigd met f bij zware vervuiling
+            # Zwaar: vast 4 min/paneel
             uren_cleaning_korstmos = (aantal_korstmos_panelen * (4.0 / 60.0)) * f
 
     # Totale cleaning uren
@@ -202,15 +195,15 @@ def bereken_kosten_robot(
     tot_arb_u = cleaning_uren + overhead_totaal
     arb_kost = tot_arb_u * params['uurloon_op']
 
-    # Transport (per dag heen/terug -> hier enkel km-parameter; we houden het model zoals je had: dag * km * €/km)
+    # Transport
     veh_k_dag = afstand_km * params['kosten_per_km']
     trans_kost = dagen * veh_k_dag
 
-    # Borstel slijtage (factor f meegenomen, want 3× overgaan slijt meer)
+    # Borstel slijtage (factor f meegenomen)
     bor_k_per_paneel = (params['borstels_per_robot'] * params['borstel_prijs']) / max(params['borstel_life_panelen'], 1)
     bor_kost = aantal_panelen * bor_k_per_paneel * f
 
-    # Batterij: meer uren => meer cycli
+    # Batterij: cycli ~ cleaning_uren
     bat_kost_per_cyclus = params['bat_prijs'] / max(params['bat_cycli'], 1)
     cycli = cleaning_uren / max(params['bat_duur_u'], 0.001)
     bat_kost = cycli * bat_kost_per_cyclus
@@ -218,15 +211,15 @@ def bereken_kosten_robot(
     # Robot afschrijving
     robot_afschrijving = (aantal_panelen / max(params['robot_levensduur_panelen'], 1)) * params['robot_prijs']
 
-    # Waterverbruik: proportioneel met cleaning-uren (f zit al in cleaning_uren)
+    # Waterverbruik (f zit al in cleaning_uren)
     extra_spoelbeurten = 2 if (korstmos_aanwezig and gradatie_korstmos in ["Gemiddeld", "Zwaar"]) else 1
     total_water_l = (uren_cleaning_gewone * params['robot_water_l_per_uur']) + (uren_cleaning_korstmos * params['robot_water_l_per_uur'] * extra_spoelbeurten)
     osmose_m3 = total_water_l / 1000.0
     osmose_kost = osmose_m3 * params['waterprijs_m3']
 
-    # Coating (optioneel)
+    # Coating (optioneel) – op basis van m²
     totale_opp_paneel = aantal_panelen * paneel_oppervlakte
-    coating_liters = (totale_opp_paneel / 1000.0) * params['coating_hoeveelheid_per_1000L']
+    coating_liters = (totale_opp_paneel / 1000.0) * params['coating_l_per_1000m2']
     coating_literprijs = params['coating_prijs_per_5L'] / 5.0
     coating_prijs = coating_liters * coating_literprijs if opties.get('coating', True) else 0.0
 
@@ -238,7 +231,7 @@ def bereken_kosten_robot(
     overhead = dir_kost * params['overhead_pct']
     reiniging_totaal = dir_kost + overhead
 
-    # Subtotalen
+    # Subtotalen (coating blijft optioneel en NIET inbegrepen in subtotaal)
     subtotaal_excl_btw = reiniging_totaal + trans_kost + hoogtewerker_kost + (korstmos_product_kost if korstmos_aanwezig else 0.0)
     subtotaal_excl_btw = max(round(subtotaal_excl_btw, 2), params['minimum_tarief'])
 
@@ -288,7 +281,7 @@ params = {
     'waterprijs_m3': waterprijs_m3,
     'robot_water_l_per_uur': robot_water_l_per_uur,
     'coating_prijs_per_5L': coating_prijs_per_5L,
-    'coating_hoeveelheid_per_1000L': coating_hoeveelheid_per_1000L
+    'coating_l_per_1000m2': coating_l_per_1000m2
 }
 opties = {
     'aantal_robots': aantal_robots,
@@ -347,13 +340,15 @@ if hoogtewerker_gebruiken:
     kosten_rows.append({"Kostenpost": "Hoogtewerker", "EUR": resultaat['hoogtewerker_kost']})
 if korstmos_aanwezig:
     kosten_rows.append({"Kostenpost": "Korstmos product", "EUR": resultaat['korstmos_product_kost']})
+# Coating enkel tonen als aangevinkt
+if coating:
+    kosten_rows.append({"Kostenpost": "Optioneel: Coating", "EUR": resultaat['coating_prijs']})
 
 kosten_rows.extend([
     {"Kostenpost": "Subtotaal excl. BTW", "EUR": resultaat['subtotaal_excl_btw']},
     {"Kostenpost": f"BTW ({btw_tarief_pct}%)", "EUR": btw_bedrag},
     {"Kostenpost": "Totaal incl. BTW", "EUR": totaal_incl_btw},
-    {"Kostenpost": "Kost per paneel (excl. transport/hoogtewerker/korstmos)", "EUR": resultaat['kost_per_paneel']},
-    {"Kostenpost": "Optioneel: Coating", "EUR": resultaat['coating_prijs']},
+    {"Kostenpost": "Kost per paneel (EUR/paneel)", "EUR": resultaat['kost_per_paneel']},
 ])
 kosten_df = pd.DataFrame(kosten_rows)
 st.table(kosten_df)
@@ -374,10 +369,10 @@ def maak_excel():
         'Telefoon': contact_tel,
 
         'Aantal panelen (st.)': aantal_panelen,
-        'Afstand (km, enkele rit)': afstand_km,
+        'Afstand (km)': afstand_km,
         'Paneelgrootte (m²)': paneel_oppervlakte,
         'Aantal robots (st.)': aantal_robots,
-        'Zware vervuiling (3× overgaan)': zware_vervuiling,
+        'Zware vervuiling': zware_vervuiling,
         'Coating voorzien?': coating,
 
         'Werkuren incl. opstart/afbouw (uur)': resultaat['werkuren'],
@@ -401,8 +396,8 @@ def maak_excel():
         'Korstmos product (EUR)': resultaat['korstmos_product_kost'] if korstmos_aanwezig else 0.0,
         'Korstmos product (kg)': resultaat['korstmos_product_kg'] if korstmos_aanwezig else 0,
         'Kost per paneel (EUR/paneel)': resultaat['kost_per_paneel'],
-        'Optioneel: Coating (EUR)': resultaat['coating_prijs'],
-        'Coating hoeveelheid (L)': resultaat['coating_liters'],
+        'Optioneel: Coating (EUR)': resultaat['coating_prijs'] if coating else 0.0,
+        'Coating hoeveelheid (L)': resultaat['coating_liters'] if coating else 0.0,
 
         'Subtotaal excl. BTW (EUR)': resultaat['subtotaal_excl_btw'],
         f'BTW ({btw_tarief_pct}%) (EUR)': btw_bedrag,
@@ -410,7 +405,6 @@ def maak_excel():
     }
 
     df_info = pd.DataFrame([df_dict])
-
     df_kosten = kosten_df.copy()
 
     output = io.BytesIO()
@@ -507,27 +501,21 @@ def maak_pdf():
     flow_bottom = max(left_bottom, header_bottom)
     pdf.set_y(flow_bottom + 8)
 
-    # --- Intro tekst ---
+    # --- Intro tekst (neutraal, zonder '3 keer overgaan') ---
     pdf.set_font("DejaVu" if use_unicode else "Helvetica", "", 10)
-    info_tekst = (
-        "Wij waarderen uw keuze voor Solvigo. Uw panelen worden efficiënt gereinigd met robottechnologie. "
-        "Bij zware vervuiling gaan we drie keer over voor een optimaal resultaat. "
-        "Voor extra bescherming adviseren wij de optionele antistatische coating."
+    basis_tekst = (
+        "Bedankt voor uw vertrouwen in Solvigo. We reinigen uw zonnepanelen efficiënt en zorgvuldig "
+        "met robottechnologie. Bij hardnekkige vervuiling passen we de reinigingsintensiteit aan "
+        "voor een duurzaam resultaat."
     )
+    if coating:
+        info_tekst = (
+            basis_tekst + " Indien gewenst voorzien we een antistatische nabehandeling zodat het oppervlak "
+            "langer schoon blijft en vuil minder snel hecht."
+        )
+    else:
+        info_tekst = basis_tekst
     pdf.multi_cell(0, 5, info_tekst)
-    pdf.ln(6)
-
-    # --- Kernrij helper ---
-    label_w, value_w = 75, 40
-    def kernrij(label, value, bold=False):
-        pdf.set_font("DejaVu" if use_unicode else "Helvetica", "", 10)
-        pdf.cell(label_w, 7, label, align="L")
-        pdf.set_font("DejaVu" if use_unicode else "Helvetica", "B" if bold else "", 11)
-        pdf.cell(value_w, 7, value, ln=1, align="L")
-
-    kernrij("Aantal zonnepanelen:", f"{aantal_panelen:,}".replace(",", "."), bold=True)
-    kernrij("Werkuren (incl. opstart/afbouw):", f"{resultaat['werkuren']} uur", bold=True)
-    kernrij("Aantal dagen:", f"{resultaat['dagen']}", bold=True)
     pdf.ln(6)
 
     # --- Voorwaarden voor uitvoering (praktisch) ---
@@ -562,7 +550,6 @@ def maak_pdf():
     pdf.cell(37, 8, "Totaal", border=1, align="R", fill=True)
     pdf.ln(8)
 
-    # NB: kost_per_paneel is op basis van reiniging_totaal/aantal_panelen
     pdf_kpp = f"{resultaat['kost_per_paneel']:.2f} EUR/paneel"
     pdf_rein_totaal = f"{resultaat['reiniging_totaal']:.2f} EUR"
     row("Reiniging zonnepanelen", f"{aantal_panelen} stuks", pdf_kpp, pdf_rein_totaal)
@@ -574,16 +561,17 @@ def maak_pdf():
 
     pdf.ln(6)
 
-    # --- Optioneel coating ---
-    pdf.set_draw_color(120, 120, 120)
-    pdf.set_fill_color(245, 245, 245)
-    pdf.set_font("DejaVu" if use_unicode else "Helvetica", "B", 11)
-    pdf.cell(170, 8, "Optioneel: Antistatische coating (niet inbegrepen)", border=1, align="C", fill=True)
-    pdf.ln(8)
-    pdf.set_font("DejaVu" if use_unicode else "Helvetica", "", 10)
-    pdf.cell(85, 8, f"Hoeveelheid: {resultaat['coating_liters']:.2f} L", border=1, align="L", fill=True)
-    pdf.cell(85, 8, f"Richtprijs: {resultaat['coating_prijs']:.2f} EUR", border=1, align="L", fill=True)
-    pdf.ln(10)
+    # --- Optioneel coating: ALLEEN tonen als coating is aangevinkt ---
+    if coating:
+        pdf.set_draw_color(120, 120, 120)
+        pdf.set_fill_color(245, 245, 245)
+        pdf.set_font("DejaVu" if use_unicode else "Helvetica", "B", 11)
+        pdf.cell(170, 8, "Optioneel: Antistatische coating (niet inbegrepen)", border=1, align="C", fill=True)
+        pdf.ln(8)
+        pdf.set_font("DejaVu" if use_unicode else "Helvetica", "", 10)
+        pdf.cell(85, 8, f"Hoeveelheid: {resultaat['coating_liters']:.2f} L", border=1, align="L", fill=True)
+        pdf.cell(85, 8, f"Richtprijs: {resultaat['coating_prijs']:.2f} EUR", border=1, align="L", fill=True)
+        pdf.ln(10)
 
     # --- Totaal excl/incl btw ---
     subtotaal_excl_btw = resultaat['subtotaal_excl_btw']
