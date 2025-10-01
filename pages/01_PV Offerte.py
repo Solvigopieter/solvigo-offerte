@@ -53,21 +53,21 @@ col3, col4, col5 = st.columns(3)
 with col3:
     minimum_tarief = st.number_input("Minimumtarief (EUR)", value=100.0)
     kosten_per_km = st.number_input("Kilometervergoeding (EUR per km)", value=0.40)
-    waterprijs_m3 = st.number_input("Osmosewater per m³ (EUR)", value=80.0)
-    robot_panelen_per_dag = st.number_input("Robot: panelen per dag", value=2000)
+    waterprijs_m3 = st.number_input("Osmosewater per m³ (EUR)", value=90.0)
+    robot_panelen_per_dag = st.number_input("Robot: panelen per dag", value=1700)
     overhead_pct = st.number_input("Overhead (%) als fractie (bv 0,20)", min_value=0.0, max_value=1.0, value=0.20, step=0.01)
 with col4:
-    uurloon_op = st.number_input("Uurtarief operator (EUR)", value=70.0)
+    uurloon_op = st.number_input("Uurtarief operator (EUR)", value=1000.0)
     u_per_dag = st.number_input("Uren per dag", value=8.0)
-    robot_water_l_per_uur = st.number_input("Robot: waterverbruik per uur (L)", value=600)
+    robot_water_l_per_uur = st.number_input("Robot: waterverbruik per uur (L)", value=900)
     coating_prijs_per_5L = st.number_input("Coating: prijs per 5L (EUR)", value=350.0)
     coating_l_per_1000m2 = st.number_input("Coatinghoeveelheid (L per 1000 m²)", value=1.0)
 with col5:
-    borstel_life_panelen = st.number_input("Borstel: levensduur (panelen)", value=60000)
+    borstel_life_panelen = st.number_input("Borstel: levensduur (panelen)", value=6000)
     borstel_prijs = st.number_input("Borstel: prijs (EUR)", value=200.0)
     borstels_per_robot = st.number_input("Borstels per robot (st.)", value=2)
     robot_prijs = st.number_input("Robot: aanschafprijs (EUR)", value=3500.0)
-    robot_levensduur_panelen = st.number_input("Robot: levensduur (panelen)", value=500000)
+    robot_levensduur_panelen = st.number_input("Robot: levensduur (panelen)", value=50000)
     bat_duur_u = st.number_input("Batterij: werktijd per lading (u)", value=3.5)
     bat_prijs = st.number_input("Batterij: prijs (EUR)", value=1000.0)
     bat_cycli = st.number_input("Batterij: cycli (st.)", value=500)
@@ -674,3 +674,4 @@ with col_download2:
     )
 
 st.info("Tip: wijzig een parameter en zie onmiddellijk het bijgewerkte overzicht.")
+
