@@ -57,7 +57,7 @@ with col3:
     robot_panelen_per_dag = st.number_input("Robot: panelen per dag", value=1700)
     overhead_pct = st.number_input("Overhead (%) als fractie (bv 0,20)", min_value=0.0, max_value=1.0, value=0.20, step=0.01)
 with col4:
-    uurloon_op = st.number_input("Uurtarief operator (EUR)", value=1000.0)
+    uurloon_op = st.number_input("Uurtarief operator (EUR)", value=120.0)
     u_per_dag = st.number_input("Uren per dag", value=8.0)
     robot_water_l_per_uur = st.number_input("Robot: waterverbruik per uur (L)", value=900)
     coating_prijs_per_5L = st.number_input("Coating: prijs per 5L (EUR)", value=350.0)
@@ -674,4 +674,5 @@ with col_download2:
     )
 
 st.info("Tip: wijzig een parameter en zie onmiddellijk het bijgewerkte overzicht.")
+
 
