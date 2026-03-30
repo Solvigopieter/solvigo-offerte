@@ -1,4 +1,3 @@
-# pages/01_PV Offerte.py
 from auth import require_login
 require_login()
 
@@ -39,6 +38,7 @@ with col1:
 with col2:
     aantal_panelen = st.number_input("Aantal panelen", min_value=1, value=1)
     afstand_km = st.number_input("Afstand (km)", min_value=0, value=1)
+    verplaatsingskosten_aanrekenen = st.checkbox("Verplaatsingskosten aanrekenen", value=True)
     paneel_oppervlakte = st.number_input("Oppervlakte per paneel (m²)", min_value=0.1, value=2.0, step=0.1)
     aantal_robots = st.number_input("Aantal robots", min_value=1, value=1)
     zware_vervuiling = st.checkbox("Zware vervuiling", value=False)
@@ -123,7 +123,7 @@ def gen_offertenummer(klantnaam: str, offertedatum: date) -> str:
     return f"{offertedatum:%Y%m%d}-{tag}"
 
 # =========================
-# Kernberekening (met nieuwe logica)
+# Kernberekening
 # =========================
 def bereken_kosten_robot(
     aantal_panelen, afstand_km, opties, params,
@@ -197,7 +197,7 @@ def bereken_kosten_robot(
 
     # Transport
     veh_k_dag = afstand_km * params['kosten_per_km']
-    trans_kost = dagen * veh_k_dag
+    trans_kost = dagen * veh_k_dag if opties.get('verplaatsingskosten_aanrekenen', True) else 0.0
 
     # Borstel slijtage (factor f meegenomen)
     bor_k_per_paneel = (params['borstels_per_robot'] * params['borstel_prijs']) / max(params['borstel_life_panelen'], 1)
@@ -286,7 +286,8 @@ params = {
 opties = {
     'aantal_robots': aantal_robots,
     'zware_vervuiling': zware_vervuiling,
-    'coating': coating
+    'coating': coating,
+    'verplaatsingskosten_aanrekenen': verplaatsingskosten_aanrekenen
 }
 
 resultaat = bereken_kosten_robot(
@@ -334,8 +335,11 @@ kosten_rows = [
     {"Kostenpost": "Osmosewater-kost", "EUR": resultaat['osmose_kost']},
     {"Kostenpost": "Overhead", "EUR": resultaat['overhead']},
     {"Kostenpost": "Reiniging totaal (incl. overhead)", "EUR": resultaat['reiniging_totaal']},
-    {"Kostenpost": "Transportkost", "EUR": resultaat['transportkost']},
 ]
+
+if verplaatsingskosten_aanrekenen:
+    kosten_rows.append({"Kostenpost": "Transportkost", "EUR": resultaat['transportkost']})
+
 if hoogtewerker_gebruiken:
     kosten_rows.append({"Kostenpost": "Hoogtewerker", "EUR": resultaat['hoogtewerker_kost']})
 if korstmos_aanwezig:
@@ -370,6 +374,7 @@ def maak_excel():
 
         'Aantal panelen (st.)': aantal_panelen,
         'Afstand (km)': afstand_km,
+        'Verplaatsingskosten aanrekenen?': verplaatsingskosten_aanrekenen,
         'Paneelgrootte (m²)': paneel_oppervlakte,
         'Aantal robots (st.)': aantal_robots,
         'Zware vervuiling': zware_vervuiling,
@@ -384,7 +389,7 @@ def maak_excel():
         'Volgende dagen cleaning-capaciteit (uur)': resultaat['other_capacity'],
         'Osmoseverbruik (m³)': resultaat['osmose_m3'],
 
-        'Transportkost (EUR)': resultaat['transportkost'],
+        'Transportkost (EUR)': resultaat['transportkost'] if verplaatsingskosten_aanrekenen else 0.0,
         'Osmosewater-kost (EUR)': resultaat['osmose_kost'],
         'Arbeidskost (EUR)': resultaat['arb_kost'],
         'Borstelslijtage (EUR)': resultaat['bor_kost'],
@@ -501,7 +506,7 @@ def maak_pdf():
     flow_bottom = max(left_bottom, header_bottom)
     pdf.set_y(flow_bottom + 8)
 
-    # --- Intro tekst (neutraal, zonder '3 keer overgaan') ---
+    # --- Intro tekst ---
     pdf.set_font("DejaVu" if use_unicode else "Helvetica", "", 10)
     basis_tekst = (
         "Bedankt voor uw vertrouwen in Solvigo. We reinigen uw zonnepanelen efficiënt en zorgvuldig "
@@ -518,7 +523,7 @@ def maak_pdf():
     pdf.multi_cell(0, 5, info_tekst)
     pdf.ln(6)
 
-    # --- Voorwaarden voor uitvoering (praktisch) ---
+    # --- Voorwaarden voor uitvoering ---
     pdf.set_font("DejaVu" if use_unicode else "Helvetica", "B", 8)
     pdf.set_text_color(200, 0, 0)
     pdf.multi_cell(
@@ -553,7 +558,15 @@ def maak_pdf():
     pdf_kpp = f"{resultaat['kost_per_paneel']:.2f} EUR/paneel"
     pdf_rein_totaal = f"{resultaat['reiniging_totaal']:.2f} EUR"
     row("Reiniging zonnepanelen", f"{aantal_panelen} stuks", pdf_kpp, pdf_rein_totaal)
-    row("Verplaatsingskosten", f"{afstand_km} km x {resultaat['dagen']} d", f"{kosten_per_km:.2f} EUR/km", f"{resultaat['transportkost']:.2f} EUR")
+
+    if verplaatsingskosten_aanrekenen:
+        row(
+            "Verplaatsingskosten",
+            f"{afstand_km} km x {resultaat['dagen']} d",
+            f"{kosten_per_km:.2f} EUR/km",
+            f"{resultaat['transportkost']:.2f} EUR"
+        )
+
     if korstmos_aanwezig:
         row("Korstmos product", f"{resultaat['korstmos_product_kg']} kg", f"{PRODUCT_PRIJS_PER_KG:.2f} EUR/kg", f"{resultaat['korstmos_product_kost']:.2f} EUR")
     if hoogtewerker_gebruiken:
@@ -561,7 +574,7 @@ def maak_pdf():
 
     pdf.ln(6)
 
-    # --- Optioneel coating: ALLEEN tonen als coating is aangevinkt ---
+    # --- Optioneel coating ---
     if coating:
         pdf.set_draw_color(120, 120, 120)
         pdf.set_fill_color(245, 245, 245)
@@ -674,5 +687,3 @@ with col_download2:
     )
 
 st.info("Tip: wijzig een parameter en zie onmiddellijk het bijgewerkte overzicht.")
-
-
